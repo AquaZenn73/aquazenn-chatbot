@@ -118,7 +118,38 @@ app.get('/health', (req, res) => {
 // ============================================
 
 const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
+// ============================================
+// LOGS DE DÉMARRAGE (DEBUG)
+// ============================================
+
+console.log('=== DÉMARRAGE SERVEUR AQUAZENN ===');
+console.log('PORT:', PORT);
+console.log('NODE_ENV:', process.env.NODE_ENV || 'non défini');
+
+// Vérification CRITIQUE de la clé API
+console.log('GROQ_API_KEY présente:', !!process.env.GROQ_API_KEY);
+console.log('GROQ_API_KEY type:', typeof process.env.GROQ_API_KEY);
+
+// Ne montre JAMAIS la clé complète, juste les 10 premiers caractères
+if (process.env.GROQ_API_KEY) {
+  const keyPreview = process.env.GROQ_API_KEY.substring(0, 10) + '...';
+  console.log('GROQ_API_KEY début:', keyPreview);
+  console.log('GROQ_API_KEY longueur:', process.env.GROQ_API_KEY.length);
+} else {
+  console.log('❌❌❌ GROQ_API_KEY EST VIDE OU MANQUANTE ❌❌❌');
+}
+
+console.log('===================================');
+
+// ============================================
+// LANCEMENT
+// ============================================
+
+app.listen(PORT, () => {
+  console.log(`✅ Serveur AquaZenn lancé sur port ${PORT}`);
+});
 app.listen(PORT, () => {
   console.log(`✅ AquaZenn Chatbot lancé sur port ${PORT}`);
   console.log(`🤖 IA: Groq (Llama 3)`);
