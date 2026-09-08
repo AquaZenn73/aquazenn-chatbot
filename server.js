@@ -1,248 +1,162 @@
-require('dotenv').config();
+// ============================================
+// AQUAZENN CHATBOT API - Railway
+// ============================================
 
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 7860;
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
-// ========== CORS - TON DOMAINE SHOPIFY ==========
-const ALLOWED_ORIGINS = [
-  'https://aquazenn.fr',
-  'https://www.aquazenn.fr'
-  // Ajoute ici ton domaine myshopify si tu testes en preview:
-  // 'https://ton-shop.myshopify.com'
+// ============================================
+// CORS - TRÈS IMPORTANT, MET ÇA EN PREMIER !
+// ============================================
+
+const allowedOrigins = [
+    'https://aquazenn.fr',
+    'https://www.aquazenn.fr',
+    'https://aquazenn.myshopify.com',
+    'http://localhost:3000',
+    'http://localhost:5000'
 ];
 
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    const allowed = ALLOWED_ORIGINS.some(o => {
-      if (o.includes('*')) {
-        const regex = new RegExp('^' + o.replace(/\*/g, '.*') + '$');
-        return regex.test(origin);
-      }
-      return o === origin;
-    });
-    if (allowed) {
-      callback(null, true);
-    } else {
-      console.warn('CORS bloque:', origin);
-      callback(null, false);
-    }
-  },
-  methods: ['POST', 'GET'],
-  allowedHeaders: ['Content-Type']
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.log('CORS bloqué pour:', origin);
+            callback(null, false);
+        }
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    optionsSuccessStatus: 204
 }));
 
-app.use(express.json({ limit: '1mb' }));
+// Gestion spéciale pour les requêtes OPTIONS (preflight)
+app.options('*', cors());
 
-// ========== FAQ LOCALE (gratuit, instantané) ==========
-const FAQ = {
-  'media filtrant': {
-    reponse: '**Média filtrant — Durée de vie :**\n🟤 Sable : **3-5 ans**\n🔵 Verre : **8-10 ans**\n⚪ Zéolite : **5-7 ans**\n\nRemplacez quand : pression ↑, rétrolavages fréquents, eau trouble persistante.',
-    mots: ['sable', 'verre', 'filtrant', 'filtre', 'zéolite', 'media', 'filtration']
-  },
-  'ph': {
-    reponse: '**pH idéal : 7.2 - 7.4**\n\n🔴 Trop bas (< 7.0) : yeux irrités, corrosion\n🔵 Trop haut (> 7.6) : chlore inactif\n\n🛠️ pH+ : carbonate de sodium | pH- : acide sulfurique dilué',
-    mots: ['ph', 'acid', 'basique', 'alcalin']
-  },
-  'chlore': {
-    reponse: '**Désinfection :**\n🟡 Chlore (piscine extérieur) : **1-3 mg/L**\n🔵 Brome (spa, moins d\'odeurs) : **2-4 mg/L**\n🟢 Oxygène actif : sans chlore, biodégradable\n\nTestez 2x/semaine minimum !',
-    mots: ['chlore', 'brome', 'desinfect', 'oxydant', 'traitement', 'desinfection']
-  },
-  'eau verte': {
-    reponse: '**Eau verte = algues !** 🦠\n\n1️⃣ Choc chlore (10x la dose normale)\n2️⃣ Brosser parois + fond\n3️⃣ Filtrer minimum 24h\n4️⃣ Vérifier pH (7.0-7.4)\n\n⚠️ Cause : filtration insuffisante ou chlore trop bas',
-    mots: ['vert', 'algue', 'algues', 'eau verte']
-  },
-  'tarif': {
-    reponse: '**Devis personnalisé AquaZenn :**\n\n📧 contact@aquazenn.fr\n📞 [ton numéro]\n\nIntervention sur **Chambéry et 30km alentours**',
-    mots: ['prix', 'tarif', 'devis', 'combien', 'coute', 'cout'],
-    forceContact: true
-  }
-};
+// ============================================
+// BODY PARSER (APRÈS CORS !)
+// ============================================
 
-function trouverFAQ(message) {
-  const m = message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  for (const [cle, data] of Object.entries(FAQ)) {
-    if (data.mots.some(mot => m.includes(mot))) {
-      return data;
-    }
-  }
-  return null;
-}
+app.use(express.json({ limit: '10mb' }));
 
-// ========== RATE LIMITER SIMPLE ==========
-const requetesParIP = new Map();
+// ============================================
+// ROUTE TEST - pour vérifier que CORS marche
+// ============================================
 
-function checkRateLimit(ip) {
-  const maintenant = Date.now();
-  const historique = (requetesParIP.get(ip) || []).filter(t => maintenant - t < 60000);
-  if (historique.length >= 15) return false;
-  historique.push(maintenant);
-  requetesParIP.set(ip, historique);
-  return true;
-}
+app.get('/test-cors', (req, res) => {
+    res.json({
+        ok: true,
+        message: 'CORS fonctionne !',
+        votreOrigin: req.headers.origin || 'aucune'
+    });
+});
 
-setInterval(() => {
-  const maintenant = Date.now();
-  for (const [ip, temps] of requetesParIP.entries()) {
-    if (temps.every(t => maintenant - t > 60000)) {
-      requetesParIP.delete(ip);
-    }
-  }
-}, 600000);
+// ============================================
+// ROUTE ACCUEIL
+// ============================================
 
-// ========== ROUTES ==========
-
-// Health check
 app.get('/', (req, res) => {
-  res.json({
-    status: 'AquaZenn API en ligne',
-    version: '2.0',
-    timestamp: new Date().toISOString()
-  });
+    res.json({
+        status: 'AquaZenn API en ligne',
+        endpoints: ['/api/chat', '/test-cors'],
+        timestamp: new Date().toISOString()
+    });
 });
 
-// Chat API principal
+// ============================================
+// ROUTE API CHAT
+// ============================================
+
 app.post('/api/chat', async (req, res) => {
-  const { message, messages, model } = req.body || {};
+    console.log('-> Requête de:', req.headers.origin);
+    console.log('-> Body:', req.body);
 
-  // Rate limit
-  const clientIP = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
-  if (!checkRateLimit(clientIP)) {
-    return res.status(429).json({
-      error: 'Trop de requêtes. Patientez une minute.',
-      fallback: 'contact@aquazenn.fr'
-    });
-  }
+    try {
+        const { message } = req.body;
 
-  // Clé API Groq présente ?
-  if (!process.env.GROQ_API_KEY) {
-    return res.status(500).json({
-      error: 'Clé API manquante',
-      fallback: 'Service temporairement indisponible. Email : contact@aquazenn.fr'
-    });
-  }
+        if (!message || typeof message !== 'string') {
+            return res.status(400).json({
+                error: 'Champ "message" requis (string)'
+            });
+        }
 
-  let messagesPourGroq = [];
+        const apiKey = process.env.GROQ_API_KEY;
+        if (!apiKey) {
+            throw new Error('Clé API Groq manquante');
+        }
 
-  // Format 1 : tableau de messages (ton ancien format)
-  if (Array.isArray(messages) && messages.length > 0) {
-    messagesPourGroq = messages
-      .filter(m => m && ['system', 'user', 'assistant'].includes(m.role))
-      .map(m => ({
-        role: m.role,
-        content: String(m.content || '').slice(0, 12000)
-      }))
-      .filter(m => m.content.trim());
+        const groqResponse = await fetch(GROQ_API_URL, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: DEFAULT_MODEL,
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'Tu es AquaZenn, assistant IA spécialisé en traitement de l\'eau, adoucisseurs, piscines et bien-être. Réponds en français de façon concise et professionnelle. Limite tes réponses à 3 phrases maximum.'
+                    },
+                    { role: 'user', content: message }
+                ],
+                temperature: 0.7,
+                max_tokens: 1024
+            })
+        });
 
-    if (!messagesPourGroq.length) {
-      return res.status(400).json({ error: 'Aucun message valide.' });
+        if (!groqResponse.ok) {
+            const errorText = await groqResponse.text();
+            throw new Error(`Groq API ${groqResponse.status}: ${errorText}`);
+        }
+
+        const groqData = await groqResponse.json();
+        const reply = groqData.choices?.[0]?.message?.content || 'Désolé, pas de réponse.';
+
+        console.log('-> Réponse envoyée');
+
+        res.json({
+            reply: reply,
+            source: 'groq',
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (err) {
+        console.error('Erreur:', err.message);
+
+        res.status(200).json({
+            reply: 'Désolé, je rencontre un problème technique. Contactez contact@aquazenn.fr',
+            error: err.message,
+            fallback: true
+        });
     }
-
-  // Format 2 : message simple (Shopify) avec FAQ
-  } else if (typeof message === 'string' && message.trim()) {
-    const faq = trouverFAQ(message);
-
-    if (faq && !faq.forceContact) {
-      console.log('✅ FAQ:', message.substring(0, 40));
-      return res.json({
-        source: 'faq',
-        message: { role: 'assistant', content: faq.reponse },
-        instant: true
-      });
-    }
-
-    messagesPourGroq = [
-      {
-        role: 'system',
-        content: 'Tu es AquaZenn, expert piscine et spa à Chambéry depuis 15 ans. Réponses courtes (max 100 mots), ton professionnel mais chaleureux. Hors sujet piscine/spa : redirige poliment vers contact@aquazenn.fr. Jamais de diagnostic définitif sans visite.'
-      },
-      { role: 'user', content: message.trim().slice(0, 500) }
-    ];
-
-  } else {
-    return res.status(400).json({ error: 'message ou messages requis.' });
-  }
-
-  // Appel Groq
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    const groqResponse = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: model || DEFAULT_MODEL,
-        messages: messagesPourGroq,
-        temperature: 0.7,
-        max_tokens: 1024
-      })
-    });
-
-    clearTimeout(timeout);
-
-    const data = await groqResponse.json();
-
-    if (!groqResponse.ok) {
-      const detail = data?.error?.message || 'Erreur Groq';
-      console.error('Groq erreur:', detail);
-
-      const lastMsg = message || messages?.[messages.length - 1]?.content || '';
-      const faq = trouverFAQ(lastMsg);
-      return res.status(200).json({
-        source: 'fallback',
-        message: {
-          role: 'assistant',
-          content: faq?.reponse || 'Service momentanément perturbé. Contactez contact@aquazenn.fr — réponse sous 2h.'
-        },
-        error: detail
-      });
-    }
-
-    const reply = data.choices?.[0]?.message;
-    if (!reply?.content) {
-      throw new Error('Réponse vide de Groq');
-    }
-
-    return res.json({
-      source: 'groq',
-      message: { role: 'assistant', content: reply.content },
-      model: data.model || model || DEFAULT_MODEL,
-      usage: data.usage || null
-    });
-
-  } catch (error) {
-    console.error('Erreur chat:', error.message);
-
-    const lastMsg = message || messages?.[messages.length - 1]?.content || '';
-    const faq = trouverFAQ(lastMsg);
-    return res.json({
-      source: 'error-fallback',
-      message: {
-        role: 'assistant',
-        content: faq?.reponse || '⚠️ Connexion limitée.\n\nConseils rapides :\n• pH idéal : 7.2-7.4\n• Chlore : 1-3 mg/L\n• Eau verte = choc chlore x10\n• Sable filtrant : 3-5 ans\n\n📧 contact@aquazenn.fr'
-      }
-    });
-  }
 });
 
-// Route legacy /chat (redirection)
-app.post('/chat', (req, res) => {
-  req.url = '/api/chat';
-  app._router.handle(req, res);
+// ============================================
+// GESTION ERREUR 404
+// ============================================
+
+app.use((req, res) => {
+    res.status(404).json({
+        error: 'Route non trouvée',
+        path: req.path
+    });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 AquaZenn API en ligne sur port ${PORT}`);
-  console.log(`🔗 CORS autorisés: ${ALLOWED_ORIGINS.join(', ')}`);
+// ============================================
+// LANCEMENT
+// ============================================
+
+app.listen(PORT, () => {
+    console.log('Serveur AquaZenn lancé sur port ' + PORT);
+    console.log('Origines autorisées:', allowedOrigins);
 });
