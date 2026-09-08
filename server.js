@@ -27,8 +27,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // ============ CONFIG ============
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = 'llama-3.1-8b-instant';  // ou 'mixtral-8x7b-32768'
-
+const GROQ_MODEL = 'llama-3.1-70b-versatile';  // ✅ Plus puissant, si tu y as accès
 // ============ HEALTH CHECK ============
 app.get('/health', (req, res) => {
   res.json({ 
