@@ -1,72 +1,54 @@
-// ========== /api/chat ==========
+// ============================================
+// AQUAZENN CHATBOT API - Railway
+// ============================================
+
+const express = require('express');
+const cors = require('cors');
+
+const app = express();
+
+// ✅ CORS pour aquazenn.fr (et www si besoin)
+const corsOptions = {
+  origin: ['https://aquazenn.fr', 'https://www.aquazenn.fr'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false
+};
+
+// Applique CORS à toutes les routes
+app.use(cors(corsOptions));
+
+// ✅ Gère explicitement le preflight OPTIONS
+app.options('*', cors(corsOptions));
+
+// Middleware JSON
+app.use(express.json());
+
+// ============================================
+// TON API CHATBOT (garde ta logique existante)
+// ============================================
+
 app.post('/api/chat', async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const { message } = req.body;
   
-  try {
-    const { message } = req.body;
-    console.log('→ Message reçu:', message);
+  // ← Ta logique chatbot ici (OpenAI, etc.)
+  // Exemple :
+  const reply = `Réponse à : ${message}`;
+  
+  res.json({ reply });
+});
 
-    // VÉRIFICATION clé
-    if (!GROQ_KEY || !GROQ_KEY.startsWith('gsk_')) {
-      console.error('CLÉ MANQUANTE OU INVALIDE');
-      return res.json({
-        reply: '🔧 Configuration API en cours...',
-        source: 'config-error'
-      });
-    }
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',  // ou 'mixtral-8x7b-32768'
-        messages: [
-          {
-            role: 'system',
-            content: 'Tu es un expert aquarium. Réponds en français, concis, utile.'
-          },
-          {
-            role: 'user',
-            content: message  // ← le message de l'utilisateur
-          }
-        ],
-        max_tokens: 500,
-        temperature: 0.7
-      })
-    });
+// ============================================
+// LANCEMENT SERVEUR
+// ============================================
 
-    console.log('← Groq status:', response.status);
-    const responseText = await response.text();
-    console.log('← Groq raw:', responseText.substring(0, 200));
+const PORT = process.env.PORT || 3000;
 
-    if (response.status === 400) {
-      console.error('PAYLOAD INVALIDE:', responseText);
-      return res.json({
-        reply: '❌ Erreur de requête. Contactez le support.',
-        source: 'groq-400',
-        detail: responseText
-      });
-    }
-
-    if (!response.ok) {
-      throw new Error(`Groq ${response.status}: ${responseText.substring(0, 200)}`);
-    }
-
-    const data = JSON.parse(responseText);
-    const reply = data.choices?.[0]?.message?.content || 'Réponse vide';
-
-    res.json({ reply, source: 'AquaZenn AI' });
-
-  } catch (err) {
-    console.error('💥 Erreur:', err.message);
-    // IMPORTANT: toujours renvoyer du JSON valide
-    res.json({
-      reply: '⚠️ Service temporairement indisponible.',
-      source: 'error',
-      detail: err.message
-    });
-  }
+app.listen(PORT, () => {
+  console.log(`✅ Serveur Aquazenn lancé sur port ${PORT}`);
 });
