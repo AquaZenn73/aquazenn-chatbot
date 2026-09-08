@@ -1,21 +1,126 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Chatbot</title>
-</head>
-<body>
-  <main class="chatbot">
-    <h1>Chatbot</h1>
-    <section id="chat-window" aria-live="polite">
-      <p><strong>Bot:</strong> Hello! How can I help you today?</p>
-    </section>
-    <form id="chat-form">
-      <label for="message">Message</label>
-      <input id="message" name="message" type="text" placeholder="Type your message" autocomplete="off">
-      <button type="submit">Send</button>
-    </form>
-  </main>
-</body>
-</html>
+// ============================================
+// AQUAZENN CHATBOT API - Railway + Groq
+// ============================================
+
+const express = require('express');
+const cors = require('cors');
+
+const app = express();
+
+// ✅ CORS pour aquazenn.fr
+const corsOptions = {
+  origin: ['https://aquazenn.fr', 'https://www.aquazenn.fr'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+app.use(express.json());
+
+// ============================================
+// CONFIG GROQ
+// ============================================
+
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+// ============================================
+// API CHATBOT — AVEC VRAIE IA GROQ
+// ============================================
+
+app.post('/api/chat', async (req, res) => {
+  const { message } = req.body;
+
+  // Vérifie que la clé API est définie
+  if (!GROQ_API_KEY) {
+    console.error('❌ GROQ_API_KEY manquante dans les variables d\'environnement');
+    return res.status(500).json({ 
+      reply: 'Erreur de configuration serveur. Contactez l\'administrateur.' 
+    });
+  }
+
+  try {
+    // ✅ APPEL RÉEL À L'API GROQ
+    const response = await fetch(GROQ_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama3-8b-8192',      // rapide et pas cher
+        // model: 'mixtral-8x7b-32768', // plus puissant si besoin
+        messages: [
+          {
+            role: 'system',
+            content: `Tu es AquaZenn, un expert piscine et spa francophone.
+Tu aides les clients avec :
+- Choix de matériel (pompes, filtres, robots)
+- Traitement de l'eau (pH, chlore, brome, TAC, TH)
+- Entretien régulier et dépannage
+- Hivernage et remise en service
+- Réglementation et sécurité
+
+Règles :
+- Sois concis (3-5 paragraphes max)
+- Donne des étapes concrètes et actionnables
+- Propose des produits ou prestations AquaZenn quand pertinent
+- Termine par une question pour engager la suite`
+          },
+          {
+            role: 'user',
+            content: message
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 800
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('Erreur Groq API:', response.status, errorData);
+      throw new Error(`Groq API: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const reply = data.choices[0].message.content;
+
+    console.log(`✅ Réponse générée pour: "${message.substring(0, 50)}..."`);
+    
+    res.json({ reply });
+
+  } catch (error) {
+    console.error('❌ Erreur chatbot:', error);
+    res.status(500).json({ 
+      reply: 'Désolé, je rencontre un problème technique. Réessayez dans quelques instants, ou contactez-nous directement.' 
+    });
+  }
+});
+
+// ============================================
+// ROUTES DE BASE
+// ============================================
+
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    service: 'aquazenn-chatbot',
+    ai_provider: 'groq',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ============================================
+// LANCEMENT
+// ============================================
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`✅ AquaZenn Chatbot lancé sur port ${PORT}`);
+  console.log(`🤖 IA: Groq (Llama 3)`);
+  console.log(`🔑 Clé API: ${GROQ_API_KEY ? 'OK' : 'MANQUANTE ❌'}`);
+});
